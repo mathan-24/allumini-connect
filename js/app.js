@@ -3,9 +3,11 @@
 // =====================================================
 
 // ── Auth ───────────────────────────────────────────
-const USERS = [
-  { username: 'admin',  password: 'admin123',  name: 'Admin',        role: 'Super Admin', roleKey: 'admin'  },
-  { username: 'alumni', password: 'alumni123', name: 'Alumni User',   role: 'Alumni',      roleKey: 'alumni' },
+const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const ADMIN_EMAILS = [
+  'msironman007@gmail.com',
+  'admin@gmail.com',
+  'admin@example.com'
 ];
 
 let currentUser = null;
@@ -20,6 +22,14 @@ function setSession(user) {
 
 function clearSession() {
   sessionStorage.removeItem('ac_session');
+}
+
+function getUserRole(email) {
+  const cleanEmail = email.trim().toLowerCase();
+  if (ADMIN_EMAILS.map(e => e.toLowerCase()).includes(cleanEmail)) {
+    return { role: 'Super Admin', roleKey: 'admin' };
+  }
+  return { role: 'Alumni', roleKey: 'alumni' };
 }
 
 function isAdmin() {
@@ -296,7 +306,12 @@ function renderDirectory() {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Add Alumni
       </button>
-      ` : ''}
+      ` : (!alumni.some(a => a.email && a.email.toLowerCase() === currentUser.email.toLowerCase()) ? `
+      <button class="btn btn-primary" id="addAlumniBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add My Profile
+      </button>
+      ` : '')}
     </div>
   </div>
 
@@ -395,7 +410,7 @@ function alumniCard(a) {
         <button class="btn btn-ghost btn-sm btn-icon view-alumni" data-id="${a.id}" title="View Profile">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
-        ${isAdmin() ? `
+        ${(isAdmin() || (currentUser && a.email && a.email.toLowerCase() === currentUser.email.toLowerCase())) ? `
         <button class="btn btn-secondary btn-sm btn-icon edit-alumni" data-id="${a.id}" title="Edit">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
@@ -457,15 +472,15 @@ function alumniForm(a = {}) {
     <div class="form-grid">
       <div class="form-group">
         <label class="form-label">First Name</label>
-        <input class="form-input" id="fName" placeholder="Arjun" value="${a.name ? a.name.split(' ')[0] : ''}" />
+        <input class="form-input" id="fName" placeholder="Arjun" value="${a.name ? a.name.split(' ')[0] : (isAdmin() ? '' : currentUser.name.split(' ')[0])}" />
       </div>
       <div class="form-group">
         <label class="form-label">Last Name</label>
-        <input class="form-input" id="fLast" placeholder="Kumar" value="${a.name ? a.name.split(' ').slice(1).join(' ') : ''}" />
+        <input class="form-input" id="fLast" placeholder="Kumar" value="${a.name ? a.name.split(' ').slice(1).join(' ') : (isAdmin() ? '' : currentUser.name.split(' ').slice(1).join(' '))}" />
       </div>
       <div class="form-group">
         <label class="form-label">Email</label>
-        <input class="form-input" id="fEmail" type="email" placeholder="arjun@gmail.com" value="${a.email||''}" />
+        <input class="form-input" id="fEmail" type="email" placeholder="arjun@gmail.com" value="${a.email || (isAdmin() ? '' : currentUser.email)}" ${!isAdmin() ? 'disabled' : ''} />
       </div>
       <div class="form-group">
         <label class="form-label">Phone</label>
@@ -1024,8 +1039,9 @@ function bindPageEvents(page) {
     document.getElementById('exportCsvBtn')?.addEventListener('click', exportCSV);
 
     document.getElementById('addAlumniBtn')?.addEventListener('click', () => {
-      if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
-      openModal('Add New Alumni', alumniForm());
+      const hasOwn = alumni.some(a => a.email && a.email.toLowerCase() === currentUser.email.toLowerCase());
+      if (!isAdmin() && hasOwn) { showToast('Profile already exists', 'error'); return; }
+      openModal(isAdmin() ? 'Add New Alumni' : 'Add My Profile', alumniForm());
       bindAlumniFormSave();
     });
 
@@ -1040,16 +1056,23 @@ function bindPageEvents(page) {
         if (a) openModal(`${a.name}'s Profile`, viewProfile(a));
       }
       if (editBtn) {
-        if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
         const a = alumni.find(x => x.id == editBtn.dataset.id);
-        if (a) { openModal('Edit Alumni', alumniForm(a)); bindAlumniFormSave(a.id); }
+        if (!a) return;
+        const isOwner = a.email && a.email.toLowerCase() === currentUser.email.toLowerCase();
+        if (!isAdmin() && !isOwner) { showToast('Permission denied', 'error'); return; }
+        openModal('Edit Alumni', alumniForm(a));
+        bindAlumniFormSave(a.id);
       }
       if (delBtn) {
-        if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
         const id  = parseInt(delBtn.dataset.id);
+        const a = alumni.find(x => x.id === id);
+        if (!a) return;
+        const isOwner = a.email && a.email.toLowerCase() === currentUser.email.toLowerCase();
+        if (!isAdmin() && !isOwner) { showToast('Permission denied', 'error'); return; }
+        
+        const name = a.name;
         const idx = alumni.findIndex(x => x.id === id);
         if (idx !== -1) {
-          const name = alumni[idx].name;
           alumni.splice(idx, 1);
           saveAlumni();
           showToast(`${name} removed`, 'success');
@@ -1143,9 +1166,18 @@ function bindAlumniFormSave(editId = null) {
       : '';
     const colors = ['linear-gradient(135deg,#6C63FF,#00D9FF)','linear-gradient(135deg,#FF6B6B,#FF8E53)','linear-gradient(135deg,#00E676,#00BCD4)'];
 
+    let emailVal = document.getElementById('fEmail')?.value.trim();
+    if (!isAdmin()) {
+      emailVal = editId ? (alumni.find(x => x.id === editId)?.email || currentUser.email) : currentUser.email;
+    }
+
     if (editId) {
       const a = alumni.find(x => x.id === editId);
       if (a) {
+        if (!isAdmin() && a.email.toLowerCase() !== currentUser.email.toLowerCase()) {
+          showToast('Permission denied', 'error');
+          return;
+        }
         a.name        = `${first} ${last}`;
         a.initials    = `${first[0]}${last[0]}`;
         a.degree      = document.getElementById('fDegree')?.value        || a.degree;
@@ -1156,7 +1188,7 @@ function bindAlumniFormSave(editId = null) {
         a.cgpa        = document.getElementById('fCgpa')?.value          || a.cgpa;
         a.percentage  = document.getElementById('fPercentage')?.value    || a.percentage;
         a.honor       = honor || a.honor;
-        a.email       = document.getElementById('fEmail')?.value         || a.email;
+        a.email       = emailVal;
         a.phone       = document.getElementById('fPhone')?.value         || a.phone;
         a.linkedin    = document.getElementById('fLinkedin')?.value      || a.linkedin;
         a.company     = document.getElementById('fCompany')?.value       || a.company;
@@ -1166,6 +1198,10 @@ function bindAlumniFormSave(editId = null) {
         showToast('Alumni updated!', 'success');
       }
     } else {
+      if (!isAdmin() && alumni.some(x => x.email && x.email.toLowerCase() === currentUser.email.toLowerCase())) {
+        showToast('Profile already exists', 'error');
+        return;
+      }
       const newId = alumni.length ? Math.max(...alumni.map(a => a.id)) + 1 : 1;
       alumni.unshift({
         id:          newId,
@@ -1179,7 +1215,7 @@ function bindAlumniFormSave(editId = null) {
         cgpa:        document.getElementById('fCgpa')?.value        || '',
         percentage:  document.getElementById('fPercentage')?.value  || '',
         honor,
-        email:       document.getElementById('fEmail')?.value       || `${first.toLowerCase()}@gmail.com`,
+        email:       emailVal,
         phone:       document.getElementById('fPhone')?.value       || 'N/A',
         linkedin:    document.getElementById('fLinkedin')?.value    || '',
         company:     document.getElementById('fCompany')?.value     || 'Unknown',
@@ -1199,81 +1235,164 @@ function bindAlumniFormSave(editId = null) {
 }
 
 // =====================================================
-// AUTH – LOGIN / LOGOUT
+// AUTH – GOOGLE & MOCK AUTH
 // =====================================================
+function decodeJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Google Sign-In SDK Callback
+window.handleCredentialResponse = function(response) {
+  const payload = decodeJwt(response.credential);
+  if (payload) {
+    const email = payload.email;
+    const name = payload.name || payload.given_name || email.split('@')[0];
+    const picture = payload.picture || '';
+    const { role, roleKey } = getUserRole(email);
+
+    loginSuccess({ email, name, picture, role, roleKey });
+  } else {
+    showToast('Google Sign-In failed', 'error');
+  }
+};
+
+function loginSuccess(user) {
+  currentUser = user;
+  setSession(user);
+
+  const loginScreen = document.getElementById('loginScreen');
+  const appShell    = document.getElementById('appShell');
+
+  loginScreen.classList.add('hidden');
+  appShell.classList.add('visible');
+  applyUserUI();
+  
+  navigate('dashboard');
+
+  setTimeout(() => { loginScreen.style.display = 'none'; }, 450);
+  showToast(`Signed in as ${user.name}`, 'success');
+}
+
+function injectGoogleChooser() {
+  if (document.getElementById('gChooserOverlay')) return;
+  const chooser = document.createElement('div');
+  chooser.id = 'gChooserOverlay';
+  chooser.className = 'g-chooser-overlay';
+  chooser.innerHTML = `
+    <div class="g-chooser-modal">
+      <div class="g-chooser-header">
+        <div class="g-chooser-logo">
+          <svg viewBox="0 0 24 24" width="28" height="28">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.81-1.02-1.78-1.02-2.72z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+        </div>
+        <h3 class="g-chooser-title">Choose an account</h3>
+        <p class="g-chooser-subtitle">to continue to AlumniConnect</p>
+      </div>
+
+      <div class="g-chooser-accounts">
+        <button class="g-chooser-account" data-email="msironman007@gmail.com" data-name="Mathan">
+          <div class="g-chooser-avatar" style="background:#6C63FF">M</div>
+          <div class="g-chooser-info">
+            <span class="g-chooser-name">Mathan</span>
+            <span class="g-chooser-email">msironman007@gmail.com</span>
+          </div>
+          <span class="g-chooser-role-tag admin">Admin</span>
+        </button>
+        <button class="g-chooser-account" data-email="alumni@example.com" data-name="Alumni User">
+          <div class="g-chooser-avatar" style="background:#00D9FF">A</div>
+          <div class="g-chooser-info">
+            <span class="g-chooser-name">Alumni User</span>
+            <span class="g-chooser-email">alumni@example.com</span>
+          </div>
+          <span class="g-chooser-role-tag user">User</span>
+        </button>
+      </div>
+
+      <div class="g-chooser-divider">or use a custom account</div>
+
+      <form class="g-chooser-form" id="gChooserForm">
+        <div class="g-chooser-input-group">
+          <label class="g-chooser-label">Display Name</label>
+          <input class="g-chooser-input" id="gChooserName" type="text" placeholder="e.g. John Doe" required />
+        </div>
+        <div class="g-chooser-input-group">
+          <label class="g-chooser-label">Email Address</label>
+          <input class="g-chooser-input" id="gChooserEmail" type="email" placeholder="e.g. john.doe@gmail.com" required />
+        </div>
+        <button class="g-chooser-submit-btn" type="submit">Sign In</button>
+      </form>
+
+      <button class="g-chooser-cancel-btn" id="gChooserCancel">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(chooser);
+}
+
 function initAuth() {
   const loginScreen = document.getElementById('loginScreen');
   const appShell    = document.getElementById('appShell');
-  const loginBtn    = document.getElementById('loginBtn');
-  const loginError  = document.getElementById('loginError');
-  const loginEye    = document.getElementById('loginEye');
-  const loginPwd    = document.getElementById('loginPassword');
 
-  // Password visibility toggle
-  loginEye?.addEventListener('click', () => {
-    const isText = loginPwd.type === 'text';
-    loginPwd.type = isText ? 'password' : 'text';
-    document.getElementById('eyeIcon').innerHTML = isText
-      ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
-      : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+  // Inject Custom accounts selector
+  injectGoogleChooser();
+
+  const gChooserOverlay = document.getElementById('gChooserOverlay');
+
+  // Click handler for mock google button
+  document.getElementById('mockGoogleBtn')?.addEventListener('click', () => {
+    gChooserOverlay.classList.add('open');
   });
 
-  // Enter key submits
-  [document.getElementById('loginUsername'), loginPwd].forEach(el => {
-    el?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('gChooserCancel')?.addEventListener('click', () => {
+    gChooserOverlay.classList.remove('open');
   });
 
-  loginBtn?.addEventListener('click', doLogin);
+  // Account selector list clicks
+  gChooserOverlay.querySelectorAll('.g-chooser-account').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const email = btn.dataset.email;
+      const name = btn.dataset.name;
+      const { role, roleKey } = getUserRole(email);
+      loginSuccess({ email, name, picture: '', role, roleKey });
+      gChooserOverlay.classList.remove('open');
+    });
+  });
 
-  function doLogin() {
-    const username = document.getElementById('loginUsername')?.value.trim();
-    const password = loginPwd?.value;
-    const user = USERS.find(u => u.username === username && u.password === password);
+  // Form submit for custom mock account
+  document.getElementById('gChooserForm')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = document.getElementById('gChooserName').value.trim();
+    const email = document.getElementById('gChooserEmail').value.trim();
+    if (!name || !email) return;
 
-    if (!user) {
-      loginError.classList.add('show');
-      document.getElementById('loginUsername').style.borderColor = 'var(--danger)';
-      loginPwd.style.borderColor = 'var(--danger)';
+    const { role, roleKey } = getUserRole(email);
+    loginSuccess({ email, name, picture: '', role, roleKey });
+    gChooserOverlay.classList.remove('open');
+  });
 
-      // Shake animation
-      document.getElementById('loginCard').style.animation = 'none';
-      setTimeout(() => { document.getElementById('loginCard').style.animation = 'shake 0.4s ease'; }, 10);
-      return;
-    }
-
-    // Clear error state
-    loginError.classList.remove('show');
-
-    // Animate button
-    loginBtn.disabled = true;
-    document.getElementById('loginBtnText').textContent = 'Signing in...';
-
-    setTimeout(() => {
-      currentUser = user;
-      setSession(user);
-      loginScreen.classList.add('hidden');
-      appShell.classList.add('visible');
-      applyUserUI();
-      navigate('dashboard');
-
-      setTimeout(() => { loginScreen.style.display = 'none'; }, 450);
-      loginBtn.disabled = false;
-      document.getElementById('loginBtnText').textContent = 'Sign In';
-    }, 600);
-  }
-
-  // Logout
+  // Logout button
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
     clearSession();
     currentUser = null;
+
     loginScreen.style.display = 'flex';
-    loginScreen.classList.remove('hidden');
-    appShell.classList.remove('visible');
-    document.getElementById('loginUsername').value = '';
-    document.getElementById('loginPassword').value = '';
-    document.getElementById('loginUsername').style.borderColor = '';
-    document.getElementById('loginPassword').style.borderColor = '';
-    loginError.classList.remove('show');
+    setTimeout(() => {
+      loginScreen.classList.remove('hidden');
+      appShell.classList.remove('visible');
+    }, 10);
+    
     showToast('Signed out successfully', 'success');
   });
 
@@ -1286,40 +1405,40 @@ function initAuth() {
     applyUserUI();
     navigate('dashboard');
   }
+
+  // Load real Google One-tap/button if Client ID is configured and not default
+  if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') {
+    const realBtn = document.getElementById('realGoogleBtn');
+    if (realBtn) realBtn.style.display = 'block';
+    
+    const onloadEl = document.getElementById('g_id_onload');
+    if (onloadEl) {
+      onloadEl.setAttribute('data-client_id', GOOGLE_CLIENT_ID);
+    }
+  }
 }
 
 function applyUserUI() {
   if (!currentUser) return;
-  // Sidebar
-  document.getElementById('sidebarAvatar').textContent = currentUser.name[0].toUpperCase();
+  
+  // Sidebar avatar: if Google photo is available, render it! Otherwise render initials.
+  const sidebarAvatar = document.getElementById('sidebarAvatar');
+  if (currentUser.picture) {
+    sidebarAvatar.innerHTML = `<img src="${currentUser.picture}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`;
+    sidebarAvatar.style.background = 'transparent';
+  } else {
+    sidebarAvatar.textContent = currentUser.name[0].toUpperCase();
+    sidebarAvatar.style.background = '';
+  }
+
   document.getElementById('sidebarName').textContent   = currentUser.name;
   document.getElementById('sidebarRole').textContent   = currentUser.role;
+
   // Topbar badge
   const badge = document.getElementById('topbarRoleBadge');
   badge.textContent  = currentUser.role;
   badge.className    = `topbar-role-badge ${currentUser.roleKey}`;
 }
-
-// Globally accessible fill function for demo cards
-function fillCreds(user, pass) {
-  document.getElementById('loginUsername').value = user;
-  document.getElementById('loginPassword').value = pass;
-  document.getElementById('loginUsername').style.borderColor = '';
-  document.getElementById('loginPassword').style.borderColor = '';
-  document.getElementById('loginError').classList.remove('show');
-  document.getElementById('loginBtn').focus();
-}
-
-// Shake keyframe (injected dynamically)
-const shakeStyle = document.createElement('style');
-shakeStyle.textContent = `@keyframes shake {
-  0%,100%{transform:translateX(0)}
-  20%{transform:translateX(-8px)}
-  40%{transform:translateX(8px)}
-  60%{transform:translateX(-5px)}
-  80%{transform:translateX(5px)}
-}`;
-document.head.appendChild(shakeStyle);
 
 // ── Boot ─────────────────────────────────────────────
 initAuth();
