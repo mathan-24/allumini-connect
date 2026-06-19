@@ -46,6 +46,7 @@ const $main     = document.getElementById('main');
 
 // ── Router ──────────────────────────────────────────
 function navigate(page) {
+  if (!currentUser) return;
   state.page = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const navEl = document.getElementById(`nav-${page}`);
@@ -290,10 +291,12 @@ function renderDirectory() {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export CSV
       </button>
+      ${isAdmin() ? `
       <button class="btn btn-primary" id="addAlumniBtn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Add Alumni
       </button>
+      ` : ''}
     </div>
   </div>
 
@@ -392,12 +395,14 @@ function alumniCard(a) {
         <button class="btn btn-ghost btn-sm btn-icon view-alumni" data-id="${a.id}" title="View Profile">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
+        ${isAdmin() ? `
         <button class="btn btn-secondary btn-sm btn-icon edit-alumni" data-id="${a.id}" title="Edit">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
         <button class="btn btn-danger btn-sm btn-icon del-alumni" data-id="${a.id}" title="Delete">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
         </button>
+        ` : ''}
       </div>
     </div>
   </div>`;
@@ -631,10 +636,12 @@ function renderEvents() {
     <div class="tab-bar" style="border-bottom:none;margin-bottom:0">
       ${['Upcoming','Past'].map(t => `<button class="tab ${state.eventTab===t?'active':''}" onclick="state.eventTab='${t}';navigate('events')">${t}</button>`).join('')}
     </div>
+    ${isAdmin() ? `
     <button class="btn btn-primary" id="addEventBtn">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Create Event
     </button>
+    ` : ''}
   </div>
   <div class="events-list">
     ${events.map(ev => `
@@ -715,10 +722,12 @@ function renderJobs() {
     <div class="tab-bar" style="border-bottom:none;margin-bottom:0">
       ${types.map(t => `<button class="tab ${state.jobFilter===t?'active':''}" onclick="state.jobFilter='${t}';navigate('jobs')">${t}</button>`).join('')}
     </div>
+    ${isAdmin() ? `
     <button class="btn btn-primary" id="postJobBtn">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Post a Job
     </button>
+    ` : ''}
   </div>
   <div class="jobs-list">
     ${filtered.map(j => `
@@ -1015,6 +1024,7 @@ function bindPageEvents(page) {
     document.getElementById('exportCsvBtn')?.addEventListener('click', exportCSV);
 
     document.getElementById('addAlumniBtn')?.addEventListener('click', () => {
+      if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
       openModal('Add New Alumni', alumniForm());
       bindAlumniFormSave();
     });
@@ -1030,10 +1040,12 @@ function bindPageEvents(page) {
         if (a) openModal(`${a.name}'s Profile`, viewProfile(a));
       }
       if (editBtn) {
+        if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
         const a = alumni.find(x => x.id == editBtn.dataset.id);
         if (a) { openModal('Edit Alumni', alumniForm(a)); bindAlumniFormSave(a.id); }
       }
       if (delBtn) {
+        if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
         const id  = parseInt(delBtn.dataset.id);
         const idx = alumni.findIndex(x => x.id === id);
         if (idx !== -1) {
@@ -1049,6 +1061,7 @@ function bindPageEvents(page) {
 
   if (page === 'events') {
     document.getElementById('addEventBtn')?.addEventListener('click', () => {
+      if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
       openModal('Create New Event', eventForm());
       document.getElementById('saveEventBtn')?.addEventListener('click', () => {
         const title = document.getElementById('eTitle')?.value.trim();
@@ -1083,6 +1096,7 @@ function bindPageEvents(page) {
 
   if (page === 'jobs') {
     document.getElementById('postJobBtn')?.addEventListener('click', () => {
+      if (!isAdmin()) { showToast('Permission denied', 'error'); return; }
       openModal('Post a Job', jobForm());
       document.getElementById('saveJobBtn')?.addEventListener('click', () => {
         const title = document.getElementById('jTitle')?.value.trim();
