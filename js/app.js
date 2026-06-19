@@ -3,13 +3,23 @@
 // =====================================================
 
 // ── Auth ───────────────────────────────────────────
-const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
-const ADMIN_EMAILS = [
-  'msironman007@gmail.com',
-  'admin@gmail.com',
-  'admin@example.com'
+const DEFAULT_USERS = [
+  { username: 'admin',  password: 'admin123',  name: 'Admin',        email: 'admin@example.com',  role: 'Super Admin', roleKey: 'admin'  },
+  { username: 'alumni', password: 'alumni123', name: 'Alumni User',   email: 'alumni@example.com', role: 'Alumni',      roleKey: 'alumni' }
 ];
 
+function loadUsers() {
+  try {
+    const raw = localStorage.getItem('ac_users');
+    return raw ? JSON.parse(raw) : DEFAULT_USERS;
+  } catch { return DEFAULT_USERS; }
+}
+
+function saveUsers(users) {
+  try { localStorage.setItem('ac_users', JSON.stringify(users)); } catch {}
+}
+
+let USERS = loadUsers();
 let currentUser = null;
 
 function getSession() {
@@ -22,14 +32,6 @@ function setSession(user) {
 
 function clearSession() {
   sessionStorage.removeItem('ac_session');
-}
-
-function getUserRole(email) {
-  const cleanEmail = email.trim().toLowerCase();
-  if (ADMIN_EMAILS.map(e => e.toLowerCase()).includes(cleanEmail)) {
-    return { role: 'Super Admin', roleKey: 'admin' };
-  }
-  return { role: 'Alumni', roleKey: 'alumni' };
 }
 
 function isAdmin() {
@@ -57,6 +59,11 @@ const $main     = document.getElementById('main');
 // ── Router ──────────────────────────────────────────
 function navigate(page) {
   if (!currentUser) return;
+  // Redirect normal user from Admin pages
+  if (!isAdmin() && (page === 'dashboard' || page === 'analytics')) {
+    navigate('directory');
+    return;
+  }
   state.page = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const navEl = document.getElementById(`nav-${page}`);
@@ -1235,154 +1242,164 @@ function bindAlumniFormSave(editId = null) {
 }
 
 // =====================================================
-// AUTH – GOOGLE & MOCK AUTH
+// AUTH – LOCAL AUTH & REGISTRATION
 // =====================================================
-function decodeJwt(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return null;
-  }
-}
-
-// Google Sign-In SDK Callback
-window.handleCredentialResponse = function(response) {
-  const payload = decodeJwt(response.credential);
-  if (payload) {
-    const email = payload.email;
-    const name = payload.name || payload.given_name || email.split('@')[0];
-    const picture = payload.picture || '';
-    const { role, roleKey } = getUserRole(email);
-
-    loginSuccess({ email, name, picture, role, roleKey });
-  } else {
-    showToast('Google Sign-In failed', 'error');
-  }
-};
-
-function loginSuccess(user) {
-  currentUser = user;
-  setSession(user);
-
-  const loginScreen = document.getElementById('loginScreen');
-  const appShell    = document.getElementById('appShell');
-
-  loginScreen.classList.add('hidden');
-  appShell.classList.add('visible');
-  applyUserUI();
-  
-  navigate('dashboard');
-
-  setTimeout(() => { loginScreen.style.display = 'none'; }, 450);
-  showToast(`Signed in as ${user.name}`, 'success');
-}
-
-function injectGoogleChooser() {
-  if (document.getElementById('gChooserOverlay')) return;
-  const chooser = document.createElement('div');
-  chooser.id = 'gChooserOverlay';
-  chooser.className = 'g-chooser-overlay';
-  chooser.innerHTML = `
-    <div class="g-chooser-modal">
-      <div class="g-chooser-header">
-        <div class="g-chooser-logo">
-          <svg viewBox="0 0 24 24" width="28" height="28">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.81-1.02-1.78-1.02-2.72z"/>
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-          </svg>
-        </div>
-        <h3 class="g-chooser-title">Choose an account</h3>
-        <p class="g-chooser-subtitle">to continue to AlumniConnect</p>
-      </div>
-
-      <div class="g-chooser-accounts">
-        <button class="g-chooser-account" data-email="msironman007@gmail.com" data-name="Mathan">
-          <div class="g-chooser-avatar" style="background:#6C63FF">M</div>
-          <div class="g-chooser-info">
-            <span class="g-chooser-name">Mathan</span>
-            <span class="g-chooser-email">msironman007@gmail.com</span>
-          </div>
-          <span class="g-chooser-role-tag admin">Admin</span>
-        </button>
-        <button class="g-chooser-account" data-email="alumni@example.com" data-name="Alumni User">
-          <div class="g-chooser-avatar" style="background:#00D9FF">A</div>
-          <div class="g-chooser-info">
-            <span class="g-chooser-name">Alumni User</span>
-            <span class="g-chooser-email">alumni@example.com</span>
-          </div>
-          <span class="g-chooser-role-tag user">User</span>
-        </button>
-      </div>
-
-      <div class="g-chooser-divider">or use a custom account</div>
-
-      <form class="g-chooser-form" id="gChooserForm">
-        <div class="g-chooser-input-group">
-          <label class="g-chooser-label">Display Name</label>
-          <input class="g-chooser-input" id="gChooserName" type="text" placeholder="e.g. John Doe" required />
-        </div>
-        <div class="g-chooser-input-group">
-          <label class="g-chooser-label">Email Address</label>
-          <input class="g-chooser-input" id="gChooserEmail" type="email" placeholder="e.g. john.doe@gmail.com" required />
-        </div>
-        <button class="g-chooser-submit-btn" type="submit">Sign In</button>
-      </form>
-
-      <button class="g-chooser-cancel-btn" id="gChooserCancel">Cancel</button>
-    </div>
-  `;
-  document.body.appendChild(chooser);
-}
-
 function initAuth() {
   const loginScreen = document.getElementById('loginScreen');
   const appShell    = document.getElementById('appShell');
+  const loginBtn    = document.getElementById('loginBtn');
+  const signUpBtn   = document.getElementById('signUpBtn');
+  const loginError  = document.getElementById('loginError');
+  const loginErrorText = document.getElementById('loginErrorText');
+  const loginEye    = document.getElementById('loginEye');
+  const regEye      = document.getElementById('regEye');
+  const loginPwd    = document.getElementById('loginPassword');
+  const regPwd      = document.getElementById('regPassword');
 
-  // Inject Custom accounts selector
-  injectGoogleChooser();
+  // Tab switching
+  const tabSignIn = document.getElementById('tabSignIn');
+  const tabSignUp = document.getElementById('tabSignUp');
+  const signInForm = document.getElementById('signInForm');
+  const signUpForm = document.getElementById('signUpForm');
 
-  const gChooserOverlay = document.getElementById('gChooserOverlay');
-
-  // Click handler for mock google button
-  document.getElementById('mockGoogleBtn')?.addEventListener('click', () => {
-    gChooserOverlay.classList.add('open');
+  tabSignIn?.addEventListener('click', () => {
+    tabSignIn.classList.add('active');
+    tabSignUp.classList.remove('active');
+    signInForm.classList.add('active');
+    signUpForm.classList.remove('active');
+    loginError.classList.remove('show');
   });
 
-  document.getElementById('gChooserCancel')?.addEventListener('click', () => {
-    gChooserOverlay.classList.remove('open');
+  tabSignUp?.addEventListener('click', () => {
+    tabSignUp.classList.add('active');
+    tabSignIn.classList.remove('active');
+    signUpForm.classList.add('active');
+    signInForm.classList.remove('active');
+    loginError.classList.remove('show');
   });
 
-  // Account selector list clicks
-  gChooserOverlay.querySelectorAll('.g-chooser-account').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const email = btn.dataset.email;
-      const name = btn.dataset.name;
-      const { role, roleKey } = getUserRole(email);
-      loginSuccess({ email, name, picture: '', role, roleKey });
-      gChooserOverlay.classList.remove('open');
-    });
+  // Password visibility toggle
+  loginEye?.addEventListener('click', () => {
+    const isText = loginPwd.type === 'text';
+    loginPwd.type = isText ? 'password' : 'text';
+    document.getElementById('eyeIcon').innerHTML = isText
+      ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+      : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
   });
 
-  // Form submit for custom mock account
-  document.getElementById('gChooserForm')?.addEventListener('submit', e => {
-    e.preventDefault();
-    const name = document.getElementById('gChooserName').value.trim();
-    const email = document.getElementById('gChooserEmail').value.trim();
-    if (!name || !email) return;
-
-    const { role, roleKey } = getUserRole(email);
-    loginSuccess({ email, name, picture: '', role, roleKey });
-    gChooserOverlay.classList.remove('open');
+  regEye?.addEventListener('click', () => {
+    const isText = regPwd.type === 'text';
+    regPwd.type = isText ? 'password' : 'text';
+    document.getElementById('regEyeIcon').innerHTML = isText
+      ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+      : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
   });
 
-  // Logout button
+  // Enter key submits for Sign In
+  [document.getElementById('loginUsername'), loginPwd].forEach(el => {
+    el?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  });
+
+  loginBtn?.addEventListener('click', doLogin);
+  signUpBtn?.addEventListener('click', doRegister);
+
+  function doLogin() {
+    const username = document.getElementById('loginUsername')?.value.trim().toLowerCase();
+    const password = loginPwd?.value;
+    const user = USERS.find(u => u.username === username && u.password === password);
+
+    if (!user) {
+      loginErrorText.textContent = 'Invalid username or password';
+      loginError.classList.add('show');
+      document.getElementById('loginUsername').style.borderColor = 'var(--danger)';
+      loginPwd.style.borderColor = 'var(--danger)';
+
+      // Shake animation
+      document.getElementById('loginCard').style.animation = 'none';
+      setTimeout(() => { document.getElementById('loginCard').style.animation = 'shake 0.4s ease'; }, 10);
+      return;
+    }
+
+    // Clear error state
+    loginError.classList.remove('show');
+    loginBtn.disabled = true;
+    document.getElementById('loginBtnText').textContent = 'Signing in...';
+
+    setTimeout(() => {
+      currentUser = user;
+      setSession(user);
+      loginScreen.classList.add('hidden');
+      appShell.classList.add('visible');
+      applyUserUI();
+      navigate(isAdmin() ? 'dashboard' : 'directory');
+
+      setTimeout(() => { loginScreen.style.display = 'none'; }, 450);
+      loginBtn.disabled = false;
+      document.getElementById('loginBtnText').textContent = 'Sign In';
+      showToast(`Welcome back, ${user.name}!`, 'success');
+    }, 600);
+  }
+
+  function doRegister() {
+    const username = document.getElementById('regUsername')?.value.trim();
+    const name     = document.getElementById('regName')?.value.trim();
+    const email    = document.getElementById('regEmail')?.value.trim();
+    const password = regPwd?.value;
+
+    if (!username || !name || !email || !password) {
+      loginErrorText.textContent = 'All fields are required';
+      loginError.classList.add('show');
+      return;
+    }
+
+    const res = registerUser(username, password, name, email);
+    if (!res.success) {
+      loginErrorText.textContent = res.message;
+      loginError.classList.add('show');
+      return;
+    }
+
+    loginError.classList.remove('show');
+    signUpBtn.disabled = true;
+    document.getElementById('signUpBtnText').textContent = 'Registering...';
+
+    setTimeout(() => {
+      signUpBtn.disabled = false;
+      document.getElementById('signUpBtnText').textContent = 'Register Account';
+      showToast('Registration successful! Please Sign In.', 'success');
+      
+      // Clear fields and switch tab
+      document.getElementById('regUsername').value = '';
+      document.getElementById('regName').value = '';
+      document.getElementById('regEmail').value = '';
+      regPwd.value = '';
+      tabSignIn.click();
+    }, 600);
+  }
+
+  function registerUser(username, password, name, email) {
+    username = username.toLowerCase();
+    email = email.toLowerCase();
+    if (USERS.some(u => u.username === username)) {
+      return { success: false, message: 'Username already exists' };
+    }
+    if (USERS.some(u => u.email === email)) {
+      return { success: false, message: 'Email address already registered' };
+    }
+    const newUser = {
+      username,
+      password,
+      name,
+      email,
+      role: 'Alumni',
+      roleKey: 'alumni'
+    };
+    USERS.push(newUser);
+    saveUsers(USERS);
+    return { success: true, user: newUser };
+  }
+
+  // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
     clearSession();
     currentUser = null;
@@ -1403,30 +1420,22 @@ function initAuth() {
     loginScreen.style.display = 'none';
     appShell.classList.add('visible');
     applyUserUI();
-    navigate('dashboard');
-  }
-
-  // Load real Google One-tap/button if Client ID is configured and not default
-  if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') {
-    const realBtn = document.getElementById('realGoogleBtn');
-    if (realBtn) realBtn.style.display = 'block';
-    
-    const onloadEl = document.getElementById('g_id_onload');
-    if (onloadEl) {
-      onloadEl.setAttribute('data-client_id', GOOGLE_CLIENT_ID);
-    }
+    navigate(isAdmin() ? 'dashboard' : 'directory');
   }
 }
 
 function applyUserUI() {
   if (!currentUser) return;
   
-  // Sidebar avatar: if Google photo is available, render it! Otherwise render initials.
+  // Toggle sidebar tabs based on role
+  const isUserAdmin = isAdmin();
+  const dashNav = document.getElementById('nav-dashboard');
+  const analytNav = document.getElementById('nav-analytics');
+  if (dashNav) dashNav.style.display = isUserAdmin ? 'flex' : 'none';
+  if (analytNav) analytNav.style.display = isUserAdmin ? 'flex' : 'none';
+
   const sidebarAvatar = document.getElementById('sidebarAvatar');
-  if (currentUser.picture) {
-    sidebarAvatar.innerHTML = `<img src="${currentUser.picture}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`;
-    sidebarAvatar.style.background = 'transparent';
-  } else {
+  if (sidebarAvatar) {
     sidebarAvatar.textContent = currentUser.name[0].toUpperCase();
     sidebarAvatar.style.background = '';
   }
@@ -1436,8 +1445,10 @@ function applyUserUI() {
 
   // Topbar badge
   const badge = document.getElementById('topbarRoleBadge');
-  badge.textContent  = currentUser.role;
-  badge.className    = `topbar-role-badge ${currentUser.roleKey}`;
+  if (badge) {
+    badge.textContent  = currentUser.role;
+    badge.className    = `topbar-role-badge ${currentUser.roleKey}`;
+  }
 }
 
 // ── Boot ─────────────────────────────────────────────
